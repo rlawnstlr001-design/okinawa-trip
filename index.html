@@ -94,6 +94,7 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 12px c
 .item .meta{font-size:12.5px;color:var(--mu);margin-top:2px}
 .item .meta b{color:var(--tx);font-weight:600}
 .item .memo{font-size:12.5px;color:#445;margin-top:4px;white-space:pre-wrap}
+.item .money{display:inline-block;background:#fff4e8;color:#b45309;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
 .item .acts{display:flex;flex-direction:column;gap:6px;flex:none}
 .item .acts button{width:32px;height:32px;border-radius:9px;background:#eef3f5;font-size:15px;display:grid;place-items:center}
 .leg{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 22px;position:relative;font-size:12.5px;color:var(--mu)}
@@ -387,7 +388,7 @@ function renderPlan(){
   if(!its.length) h+=`<div class="card empty">아직 일정이 없어요.<br><b>＋ 장소</b>로 검색해 추가하거나<br>지도를 <b>길게 눌러</b> 그 자리를 추가하세요.</div>`;
   its.forEach((it,i)=>{
     if(i>0) h+=`<div class="leg" id="leg-${i}"><select class="mode" data-id="${it.id}">${Object.entries(MODES).map(([k,v])=>`<option value="${k}" ${(it.mode||'car')===k?'selected':''}>${v.ic} ${v.ko}</option>`).join('')}</select><span class="legtxt"><span class="spin"></span> 경로 계산 중…</span><a href="${gmDir(its[i-1],it,it.mode||'car')}" target="_blank" rel="noopener">${(it.mode||'car')==='flight'?'항공편':'길찾기'}</a></div>`;
-    h+=`<div class="item" data-id="${it.id}"><div class="num ${it.type}">${i+1}</div><div class="body"><div class="name">${TYPES[it.type]?.ic||''} ${esc(it.name)}</div><div class="meta" id="tm-${it.id}">${timeTxt(it)}</div>${it.memo?`<div class="memo">${esc(it.memo)}</div>`:''}</div><div class="acts"><button title="편집" onclick="openItemSheet('${it.id}')">✎</button><button title="주변" onclick="nearFrom('${it.id}')">🍜</button></div></div>`;
+    h+=`<div class="item" data-id="${it.id}"><div class="num ${it.type}">${i+1}</div><div class="body"><div class="name">${TYPES[it.type]?.ic||''} ${esc(it.name)}</div><div class="meta" id="tm-${it.id}">${timeTxt(it)}</div>${(()=>{const e=state.expenses.find(x=>x.itemId===it.id); return e?`<div class="meta"><span class="money">💴 ${yen(e.amount)} · ${(CATS[e.cat]||'').slice(3)}</span></div>`:'';})()}${it.memo?`<div class="memo">${esc(it.memo)}</div>`:''}</div><div class="acts"><button title="편집" onclick="openItemSheet('${it.id}')">✎</button><button title="주변" onclick="nearFrom('${it.id}')">🍜</button></div></div>`;
   });
   const p=$('#panel-plan'); p.innerHTML=h;
   p.querySelectorAll('.item').forEach(el=>el.addEventListener('click',e=>{ if(e.target.closest('button')) return; selectItem(el.dataset.id); }));
@@ -403,6 +404,8 @@ function openItemSheet(id,preset){
   const its=state.days[state.sel].items, idx=its.findIndex(x=>x.id===id), it=idx>=0?its[idx]:null;
   pick=it?{lat:it.lat,lng:it.lng,uri:it.uri}:(preset?{lat:preset.lat,lng:preset.lng}:null);
   const v=it||{name:preset?.name||'',type:'spot',time:'',stay:60,mode:'car',memo:''};
+  const ex=it?state.expenses.find(e=>e.itemId===it.id):null;
+  const defCat=ex?ex.cat:(v.mode==='flight'?'trans':{food:'food',stay:'stay',spot:'tour',etc:'etc'}[v.type]||'etc');
   sheet(`<h3>${it?'장소 편집':'장소 추가'} <span class="muted">Day ${state.sel+1}</span></h3>
   ${it?'':`<label class="f">장소 검색 (한글 그대로 — 구글 검색)</label><input class="in" id="sq" placeholder="예: 츄라우미 수족관, 만자모, 소키소바 맛집" autocomplete="off"><div class="res" id="sres" hidden></div>`}
   <div class="picked ${pick?'':'none'}" id="picked">${pick?'📍 위치 지정됨 ('+pick.lat.toFixed(4)+', '+pick.lng.toFixed(4)+')':'⚠️ 검색 결과를 눌러 위치를 정해주세요'}</div>
@@ -410,10 +413,16 @@ function openItemSheet(id,preset){
   <label class="f">유형</label><div class="seg" id="ftype">${Object.entries(TYPES).map(([k,t])=>`<button data-v="${k}" class="${v.type===k?'on':''}">${t.ic} ${t.ko}</button>`).join('')}</div>
   <div class="grid2"><div><label class="f">도착 시간 (선택)</label><input class="in" id="ftime" type="time" value="${v.time||''}"></div><div><label class="f">머무는 시간 (분)</label><input class="in" id="fstay" type="number" inputmode="numeric" value="${v.stay??60}"></div></div>
   ${(it?idx>0:its.length>0)?`<label class="f">이전 장소에서 이동수단</label><div class="seg" id="fmode">${Object.entries(MODES).map(([k,m])=>`<button data-v="${k}" class="${(v.mode||'car')===k?'on':''}">${m.ic} ${m.ko}</button>`).join('')}</div>`:''}
+  <label class="f">경비 (¥, 선택) — 저장하면 경비 탭과 누적 금액에 바로 반영</label>
+  <input class="in" id="famt" type="number" inputmode="decimal" placeholder="예: 1200" value="${ex?ex.amount:''}">
+  <div class="chips" id="fcat" style="margin-top:6px">${Object.entries(CATS).map(([k,l])=>`<button data-v="${k}" class="chip ${defCat===k?'on':''}">${l}</button>`).join('')}</div>
   <label class="f">메모</label><textarea class="in" id="fmemo" placeholder="예약번호, 주차, 팁…">${esc(v.memo||'')}</textarea>
   ${it?`<div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="moveItem('${it.id}',-1)">▲ 위로</button><button class="btn ghost sm" onclick="moveItem('${it.id}',1)">▼ 아래로</button><button class="btn ghost sm" onclick="copyItemTo('${it.id}')">다른 날로 복사</button><span class="sp" style="flex:1"></span><button class="btn warn sm" onclick="delItem('${it.id}')">삭제</button></div>`:''}
   <div class="foot"><button class="btn ghost" onclick="closeSheet()">취소</button><button class="btn" onclick="saveItem('${it?it.id:''}')">저장</button></div>`);
-  document.querySelectorAll('#ftype button,#fmode button').forEach(b=>b.onclick=()=>{ b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); });
+  document.querySelectorAll('#ftype button,#fmode button,#fcat button').forEach(b=>b.onclick=()=>{ b.parentElement.querySelectorAll('button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); });
+  // 유형/이동수단을 바꾸면 경비 카테고리 기본값도 따라감 (경비가 아직 없을 때만)
+  const syncCat=()=>{ if(ex||($('#famt').value)) return; const t=$('#ftype .on')?.dataset.v, m=$('#fmode .on')?.dataset.v; const c=m==='flight'?'trans':{food:'food',stay:'stay',spot:'tour',etc:'etc'}[t]||'etc'; document.querySelectorAll('#fcat button').forEach(x=>x.classList.toggle('on',x.dataset.v===c)); };
+  document.querySelectorAll('#ftype button,#fmode button').forEach(b=>b.addEventListener('click',syncCat));
   const sq=$('#sq'); if(sq){ sq.focus(); sq.oninput=()=>{ clearTimeout(searchT); searchT=setTimeout(()=>doSearch(sq.value.trim()),500); }; }
   if(preset?.rev) reverseGeo(preset);
 }
@@ -458,12 +467,16 @@ function saveItem(id){
   const name=$('#fname').value.trim(); if(!name) return toast('이름을 입력하세요'); if(!pick) return toast('위치를 먼저 선택하세요');
   const its=state.days[state.sel].items;
   const data={name,lat:pick.lat,lng:pick.lng,uri:pick.uri||undefined,type:$('#ftype .on')?.dataset.v||'spot',time:$('#ftime').value,stay:Math.max(0,+$('#fstay').value||0),mode:$('#fmode .on')?.dataset.v||'car',memo:$('#fmemo').value.trim()};
-  const it=its.find(x=>x.id===id);
-  if(it) Object.assign(it,data); else its.push({id:uid(),...data});
+  let it=its.find(x=>x.id===id);
+  if(it) Object.assign(it,data); else { it=null; its.push({id:uid(),...data}); }
+  const target=it||its[its.length-1];
+  const amt=+$('#famt').value||0, cat=$('#fcat .on')?.dataset.v||'etc', exi=state.expenses.findIndex(e=>e.itemId===target.id);
+  if(amt>0){ if(exi>=0) Object.assign(state.expenses[exi],{amount:amt,cat,title:name,day:state.sel}); else state.expenses.push({id:uid(),itemId:target.id,day:state.sel,title:name,amount:amt,cat,ts:Date.now()}); }
+  else if(exi>=0) state.expenses.splice(exi,1);
   const moved=autoSort(its);
-  save(); closeSheet(); renderAll(); if(!it) fitDay(); toast((it?'수정했어요':'추가했어요')+(moved?' · 시간순으로 정렬됨':''));
+  save(); closeSheet(); renderAll(); if(!it) fitDay(); toast((it?'수정했어요':'추가했어요')+(amt>0?' · 경비 '+yen(amt)+' 반영':'')+(moved?' · 시간순 정렬됨':''));
 }
-function delItem(id){ if(!confirm('이 장소를 삭제할까요?')) return; const d=state.days[state.sel]; d.items=d.items.filter(x=>x.id!==id); save(); closeSheet(); renderAll(); }
+function delItem(id){ const hasEx=state.expenses.some(e=>e.itemId===id); if(!confirm('이 장소를 삭제할까요?'+(hasEx?' (연결된 경비도 함께 지워져요)':''))) return; const d=state.days[state.sel]; d.items=d.items.filter(x=>x.id!==id); state.expenses=state.expenses.filter(e=>e.itemId!==id); save(); closeSheet(); renderAll(); }
 function moveItem(id,dir){ const its=state.days[state.sel].items, i=its.findIndex(x=>x.id===id), j=i+dir; if(j<0||j>=its.length) return; [its[i],its[j]]=[its[j],its[i]]; save(); closeSheet(); renderAll(); }
 function copyItemTo(id){ const it=state.days[state.sel].items.find(x=>x.id===id); const n=prompt(`몇 일차로 복사할까요? (1~${state.nDays})`,String(state.sel+2)); const k=+n-1; if(!(k>=0&&k<state.nDays)) return; state.days[k].items.push({...it,id:uid()}); save(); closeSheet(); toast(`Day ${k+1}에 복사했어요`); renderDaybar(); }
 
@@ -533,7 +546,7 @@ function renderMoney(){
   <div class="row" style="margin-top:8px"><input class="in" id="eAmt" type="number" inputmode="decimal" placeholder="금액 ¥" style="flex:1"><button class="btn" id="eAdd">추가</button></div>
   <div class="chips" style="margin-top:8px" id="eCats">${Object.entries(CATS).map(([k,l])=>`<button class="chip ${moneyCat===k?'on':''}" data-k="${k}">${l}</button>`).join('')}</div></div>
   <div class="card"><div class="row" style="margin-bottom:6px"><b style="font-size:14px">${moneyAll?'전체 내역':'Day '+(state.sel+1)+' 내역'}</b><span style="flex:1"></span><button class="btn ghost sm" id="eToggle">${moneyAll?'선택한 날만':'전체 보기'}</button></div>
-  ${list.length?list.map(e=>`<div class="exp"><div class="c">${(CATS[e.cat]||'📦').slice(0,2)}</div><div class="t"><b>${esc(e.title)}</b><small>Day ${e.day+1} · ${fmtDay(e.day)} · ${(CATS[e.cat]||'').slice(3)}</small></div><div class="v">${yen(e.amount)}</div><button class="x" onclick="delExp('${e.id}')">✕</button></div>`).join(''):`<div class="empty" style="padding:14px">내역이 없어요</div>`}</div>`;
+  ${list.length?list.map(e=>`<div class="exp"><div class="c">${(CATS[e.cat]||'📦').slice(0,2)}</div><div class="t" ${e.itemId?`onclick="state.sel=${e.day};save();showTab('plan');renderAll();openItemSheet('${e.itemId}')" style="cursor:pointer"`:''}><b>${esc(e.title)}</b>${e.itemId?' <span class="muted">🔗 일정</span>':''}<small>Day ${e.day+1} · ${fmtDay(e.day)} · ${(CATS[e.cat]||'').slice(3)}</small></div><div class="v">${yen(e.amount)}</div><button class="x" onclick="delExp('${e.id}')">✕</button></div>`).join(''):`<div class="empty" style="padding:14px">내역이 없어요</div>`}</div>`;
   const p=$('#panel-money'); p.innerHTML=h;
   $('#rate').onchange=e=>{ state.rate=+e.target.value||9.2; save(); renderMoney(); renderPill(); };
   p.querySelectorAll('#eCats .chip').forEach(c=>c.onclick=()=>{ moneyCat=c.dataset.k; p.querySelectorAll('#eCats .chip').forEach(x=>x.classList.toggle('on',x===c)); });
