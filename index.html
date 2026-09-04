@@ -7,6 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f8b8d">
+<meta name="robots" content="noindex,nofollow">
 <title>오키나와 트립 플래너</title>
 <script src="config.js"></script>
 <script>
@@ -40,6 +41,10 @@ header .title b{display:block;font-size:17px;line-height:1.1}
 header .title small{display:block;font-size:12px;opacity:.85}
 .pill{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:999px;padding:6px 12px;font-weight:700;font-size:14px;white-space:nowrap;text-align:center}
 .pill small{display:block;font-weight:400;font-size:10.5px;opacity:.9;line-height:1}
+#syncDot{width:10px;height:10px;border-radius:50%;background:#9ca3af;flex:none;box-shadow:0 0 0 3px rgba(255,255,255,.35)}
+#syncDot[data-s="ok"]{background:#4ade80}#syncDot[data-s="sync"]{background:#fbbf24;animation:blink 1s infinite}#syncDot[data-s="err"]{background:#f87171}
+@keyframes blink{50%{opacity:.3}}
+.code{font-size:20px;font-weight:800;letter-spacing:3px;font-family:ui-monospace,monospace;color:var(--pri2)}
 .iconbtn{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);font-size:18px;display:grid;place-items:center}
 
 .daybar{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--sur);border-bottom:1px solid var(--line);flex:none;scrollbar-width:none}
@@ -201,7 +206,7 @@ nav.tabbar button.on{color:var(--pri);font-weight:700}
 <body>
 <header class="top">
   <div class="title"><span class="emoji">🌺</span><div><b id="tripTitle">오키나와</b><small id="tripSub"></small></div></div>
-  <button class="pill" id="spendPill">¥0<small>≈ ₩0</small></button>
+  <span id="syncDot" hidden></span><button class="pill" id="spendPill">¥0<small>≈ ₩0</small></button>
   <button class="iconbtn" id="settingsBtn" title="설정">⚙️</button>
 </header>
 <div class="daybar" id="daybar"></div>
@@ -245,7 +250,7 @@ let state;
 try{ state = JSON.parse(localStorage.getItem(LS)) || blank(); }catch(e){ state = blank(); }
 if(!state.days||state.days.length!==state.nDays){ const b=blank(); state={...b,...state,days:(state.days||b.days).slice(0,b.nDays)}; while(state.days.length<b.nDays) state.days.push({items:[]}); }
 let routeCache={}; try{ routeCache=JSON.parse(localStorage.getItem(LSR))||{}; }catch(e){}
-function save(){ try{ localStorage.setItem(LS,JSON.stringify(state)); }catch(e){} }
+function save(quiet){ try{ localStorage.setItem(LS,JSON.stringify(state)); }catch(e){} if(!quiet&&typeof scheduleSync==='function') scheduleSync(); }
 function saveRoutes(){ try{ const ks=Object.keys(routeCache); if(ks.length>160) ks.slice(0,ks.length-160).forEach(k=>delete routeCache[k]); localStorage.setItem(LSR,JSON.stringify(routeCache)); }catch(e){} }
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -606,6 +611,8 @@ function openSettings(){
   <label class="f">여행 제목</label><input class="in" id="sTitle" value="${esc(state.title)}">
   <div class="grid2"><div><label class="f">출발일</label><input class="in" id="sStart" type="date" value="${state.start}"></div><div><label class="f">일수</label><input class="in" id="sDays" type="number" min="1" max="30" value="${state.nDays}"></div></div>
   <div class="row" style="margin-top:12px"><button class="btn" onclick="applySettings()">적용</button><button class="btn ghost" onclick="loadSample()">샘플 일정 넣기</button><button class="btn warn" onclick="resetAll()">전체 초기화</button></div>
+  <label class="f">👥 공동 편집 — 동행자와 같은 일정을 실시간으로 보고 고치기</label>
+  ${!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.projectId)?`<div class="muted">아직 켜지지 않았어요 (config.js에 FIREBASE_CONFIG 필요).</div>`:state.share?`<div style="background:#f3fbfb;border-radius:10px;padding:10px"><div class="row"><span class="code">${state.share.code}</span><span class="muted" id="syncTxt">${SYNC.status==='ok'?'동기화됨':SYNC.status==='err'?'오류':'연결 중…'}</span></div><div class="row" style="margin-top:8px"><button class="btn sm" onclick="shareLink()">🔗 링크 보내기</button><button class="btn ghost sm" onclick="navigator.clipboard?.writeText('${state.share.code}').then(()=>toast('코드를 복사했어요'))">코드 복사</button><span style="flex:1"></span><button class="btn warn sm" onclick="leaveShare()">끊기</button></div><div class="muted" style="margin-top:6px">내 기기 이름: ${DEV} · 링크를 받은 사람이 열면 바로 같은 일정에 참여해요.</div></div>`:`<div class="row"><button class="btn sm" onclick="createShare()">공유 코드 만들기</button><span class="muted">또는</span></div><div class="row" style="margin-top:6px"><input class="in" id="joinCode" placeholder="받은 코드 입력 (예: AB3D-EF7G)" style="flex:1;text-transform:uppercase"><button class="btn ghost sm" onclick="joinShare($('#joinCode').value)">참여</button></div><div class="muted" style="margin-top:4px">참여하면 내 기기의 일정은 공유 일정으로 바뀌어요.</div>`}
   <label class="f">백업 / 다른 기기로 옮기기 — 아래 텍스트를 복사해서 다른 기기의 같은 칸에 붙여넣고 "가져오기"</label>
   <textarea class="in" id="sData" style="min-height:90px;font-size:11px;font-family:monospace">${esc(JSON.stringify(state))}</textarea>
   <div class="row" style="margin-top:8px"><button class="btn ghost sm" onclick="navigator.clipboard?.writeText($('#sData').value).then(()=>toast('복사했어요'),()=>toast('직접 선택해 복사하세요'))">📋 복사</button><button class="btn ghost sm" onclick="importData()">📥 가져오기</button><button class="btn ghost sm" onclick="shareData()">🔗 공유</button><button class="btn ghost sm" onclick="localStorage.removeItem('${LSR}');toast('경로 캐시를 지웠어요');renderPlan()">경로 다시 계산</button></div>
@@ -628,6 +635,56 @@ function loadSample(){
   if(!state.expenses.length) state.expenses.push({id:uid(),day:0,title:'소키소바',amount:1200,cat:'food',ts:Date.now()},{id:uid(),day:0,title:'렌터카 4일',amount:24000,cat:'trans',ts:Date.now()});
   state.sel=0; save(); closeSheet(); renderAll(); fitDay(); toast('샘플 일정을 넣었어요');
 }
+
+/* ===================== 공동 편집 (Firebase Firestore) ===================== */
+const SYNC={db:null,fs:null,ready:false,unsub:null,rev:0,timer:null,status:'off',applying:false,err:''};
+const DEV=(()=>{ let d=localStorage.getItem('okiTrip.dev'); if(!d){ d='기기-'+Math.random().toString(36).slice(2,6).toUpperCase(); localStorage.setItem('okiTrip.dev',d); } return d; })();
+function shareCode(){ const s='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<8;i++) c+=s[Math.floor(Math.random()*s.length)]; return c.slice(0,4)+'-'+c.slice(4); }
+const normCode=c=>{ const x=String(c||'').toUpperCase().replace(/[^A-Z0-9]/g,''); return x.length===8?x.slice(0,4)+'-'+x.slice(4):x; };
+function syncData(){ const {title,start,nDays,rate,days,expenses}=state; return JSON.parse(JSON.stringify({title,start,nDays,rate,days,expenses})); }
+function setStatus(s,msg){ SYNC.status=s; const el=$('#syncDot'); if(el){ el.dataset.s=s; el.title=msg||''; el.hidden=(s==='off'); } const t=$('#syncTxt'); if(t) t.textContent=msg||''; }
+async function initSync(){
+  if(!(window.FIREBASE_CONFIG&&window.FIREBASE_CONFIG.projectId)){ SYNC.err='config.js에 FIREBASE_CONFIG가 없어요'; return false; }
+  if(SYNC.ready) return true;
+  try{
+    const [{initializeApp},fs]=await Promise.all([import('https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js')]);
+    SYNC.db=fs.getFirestore(initializeApp(window.FIREBASE_CONFIG)); SYNC.fs=fs; SYNC.ready=true; return true;
+  }catch(e){ SYNC.err='동기화 모듈 로드 실패: '+(e.message||e); return false; }
+}
+const docRef=code=>SYNC.fs.doc(SYNC.db,'trips',code);
+async function createShare(){
+  if(!await initSync()) return toast(SYNC.err);
+  try{ const code=shareCode(); SYNC.rev=1; await SYNC.fs.setDoc(docRef(code),{rev:1,updatedAt:Date.now(),by:DEV,data:syncData()}); state.share={code}; save(true); listenShare(); closeSheet(); openSettings(); toast('공유 코드: '+code); }
+  catch(e){ toast('만들기 실패: '+(e.code||e.message)); }
+}
+async function joinShare(code){
+  code=normCode(code); if(code.length!==9) return toast('코드 8자리를 입력하세요');
+  if(!await initSync()) return toast(SYNC.err);
+  try{ const snap=await SYNC.fs.getDoc(docRef(code)); if(!snap.exists()) return toast('그 코드의 일정이 없어요'); applyRemote(snap.data()); state.share={code}; save(true); listenShare(); closeSheet(); renderAll(); fitDay(); toast('참여했어요 · '+code); }
+  catch(e){ toast('참여 실패: '+(e.code||e.message)); }
+}
+function applyRemote(d){ SYNC.applying=true; const sel=state.sel; Object.assign(state,d.data||{}); state.nDays=state.days.length; state.sel=Math.min(sel||0,state.nDays-1); SYNC.rev=d.rev||0; SYNC.applying=false; }
+function listenShare(){
+  if(SYNC.unsub) SYNC.unsub(); if(!state.share) return; setStatus('sync','연결 중…');
+  SYNC.unsub=SYNC.fs.onSnapshot(docRef(state.share.code),snap=>{
+    if(!snap.exists()){ setStatus('err','공유 일정이 삭제됐어요'); return; }
+    const d=snap.data();
+    if((d.rev||0)>SYNC.rev){ const other=d.by&&d.by!==DEV; applyRemote(d); save(true); renderAll(); if(other) toast('동행자('+d.by+')가 수정했어요'); }
+    setStatus('ok','동기화됨 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}));
+  },err=>setStatus('err','동기화 오류: '+(err.code||err.message)));
+}
+function scheduleSync(){ if(!state.share||!SYNC.ready||SYNC.applying) return; clearTimeout(SYNC.timer); setStatus('sync','저장 중…'); SYNC.timer=setTimeout(pushSync,900); }
+async function pushSync(){
+  if(!state.share||!SYNC.ready) return;
+  try{
+    const ref=docRef(state.share.code), data=syncData();
+    await SYNC.fs.runTransaction(SYNC.db,async tx=>{ const s=await tx.get(ref); const cur=s.exists()?(s.data().rev||0):0; SYNC.rev=Math.max(cur,SYNC.rev)+1; tx.set(ref,{rev:SYNC.rev,updatedAt:Date.now(),by:DEV,data}); });
+    setStatus('ok','동기화됨 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}));
+  }catch(e){ setStatus('err','저장 실패: '+(e.code||e.message)); }
+}
+function leaveShare(){ if(!confirm('공동 편집을 끊을까요? 내 기기의 일정은 그대로 남아요.')) return; if(SYNC.unsub) SYNC.unsub(); SYNC.unsub=null; state.share=null; save(true); setStatus('off'); closeSheet(); openSettings(); }
+function shareLink(){ const url=location.origin+location.pathname+'?share='+state.share.code; const text=`${state.title} 일정 공동 편집에 참여하세요\n코드: ${state.share.code}\n${url}`; if(navigator.share) navigator.share({title:state.title+' 일정',text}).catch(()=>{}); else navigator.clipboard?.writeText(text).then(()=>toast('링크를 복사했어요')); }
+(async()=>{ const u=new URL(location.href); const sc=u.searchParams.get('share'); if(sc){ u.searchParams.delete('share'); history.replaceState(null,'',u.pathname+(u.search||'')); await joinShare(sc); } else if(state.share){ if(await initSync()) listenShare(); else setStatus('err',SYNC.err); } })();
 
 /* ===================== 탭/전체 렌더 ===================== */
 let tab='plan';
